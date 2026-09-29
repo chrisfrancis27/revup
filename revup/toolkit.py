@@ -1,9 +1,11 @@
 import argparse
 import asyncio
+from typing import Optional
 
 from revup import git
 from revup.core_types import RevupUsageException
-from revup.topic_stack import TopicStack
+from revup.forge import Forge
+from revup.topic_stack import TopicStack, format_remote_branch
 
 
 async def get_topics(
@@ -14,7 +16,11 @@ async def get_topics(
     return topics
 
 
-async def main(args: argparse.Namespace, git_ctx: git.Git) -> int:
+async def main(
+    args: argparse.Namespace,
+    git_ctx: git.Git,
+    forge: Optional[Forge] = None,
+) -> int:
     """
     Miscellaneous commands exposing subunits of possibly useful functionality.
     Mainly designed for expert users or scripts.
@@ -76,5 +82,37 @@ async def main(args: argparse.Namespace, git_ctx: git.Git) -> int:
                 for commit in topic.original_commits:
                     print(commit.commit_id if args.commit_ids else commit.title)
                 print()
+    elif args.toolkit_cmd == "topic-url":
+        from revup.github.github import Github
+
+        assert isinstance(forge, Github)
+        base_branch = args.base_branch or await git_ctx.get_best_base_branch("HEAD")
+        base_branch = git_ctx.remove_branch_prefix(base_branch)
+        uploader = args.uploader or git_ctx.author
+        remote_head = format_remote_branch(uploader, base_branch, args.topic, args.branch_format)
+        result = await forge.endpoint.graphql(
+            query="""\
+query ($owner: String!, $name: String!, $head: String!) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(
+      headRefName: $head,
+      states: [OPEN, MERGED],
+      first: 1,
+      orderBy: {direction: DESC, field: UPDATED_AT}
+    ) {
+      nodes { url }
+    }
+  }
+}""",
+            owner=forge.repo_owner,
+            name=forge.repo_name,
+            head=remote_head,
+        )
+        nodes = result.data["repository"]["pullRequests"]["nodes"]
+        if not nodes:
+            raise RevupUsageException(
+                f"No pull request found for topic {args.topic!r} (head ref {remote_head})."
+            )
+        print(nodes[0]["url"])
 
     return 0

@@ -304,6 +304,25 @@ def build_parser() -> Tuple[RevupArgParser, List[RevupArgParser]]:
         action="store_true",
         help="Print the titles for all commits within a topic",
     )
+    toolkit_topic_url = toolkit_subparsers.add_parser(
+        "topic-url",
+        description="Print the GitHub PR URL for a given topic.",
+    )
+    toolkit_topic_url.add_argument("topic", help="Topic name to look up")
+    toolkit_topic_url.add_argument(
+        "--branch-format",
+        choices=["user+branch", "user", "branch", "none"],
+        default="user+branch",
+        help="Branch format used when the topic was uploaded.",
+    )
+    toolkit_topic_url.add_argument(
+        "--uploader", help="Override uploader; defaults to the git author."
+    )
+    toolkit_topic_url.add_argument(
+        "--base-branch",
+        "-b",
+        help="Base branch used when the topic was uploaded; autodetected if omitted.",
+    )
 
     if "_ARGCOMPLETE" in os.environ:
         import argcomplete
@@ -360,6 +379,11 @@ async def main(revup_parser: RevupArgParser, all_parsers: List[RevupArgParser]) 
     if args.cmd == "toolkit":
         from revup import toolkit
 
+        if args.toolkit_cmd == "topic-url":
+            from revup.forge_utils import forge_connection
+
+            async with forge_connection(args=args, git_ctx=git_ctx, conf=conf) as forge:
+                return await toolkit.main(args=args, git_ctx=git_ctx, forge=forge)
         return await toolkit.main(args=args, git_ctx=git_ctx)
 
     elif args.cmd == "cherry-pick":
